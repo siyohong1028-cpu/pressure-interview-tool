@@ -520,8 +520,41 @@ function loadSession(id) {
   toast('已加载存档：' + snap.docName);
 }
 function deleteSession(id) {
-  saveSessions(getSessions().filter(function(s) { return s.id !== id; }));
-  renderSidebar(); toast('已删除');
+  var dontAsk = localStorage.getItem('delete_dont_ask_until');
+  if (dontAsk && Date.now() < parseInt(dontAsk)) {
+    // Within cooldown period, delete directly
+    saveSessions(getSessions().filter(function(s) { return s.id !== id; }));
+    renderSidebar(); toast('已删除');
+    return;
+  }
+  // Show custom confirmation
+  showDeleteConfirm(id);
+}
+function showDeleteConfirm(id) {
+  var overlay = document.createElement('div');
+  overlay.className = 'settings-overlay';
+  overlay.style.cssText = 'display:flex;z-index:999';
+  overlay.innerHTML = '<div class="settings-dialog" style="text-align:center">' +
+    '<h3>确认删除</h3>' +
+    '<p style="color:var(--text2);font-size:13px;margin-bottom:12px">删除后无法恢复，确定要删除该存档吗？</p>' +
+    '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);margin-bottom:16px;cursor:pointer">' +
+      '<input type="checkbox" id="delDontAsk" style="width:auto;margin:0"> 一小时内不再提示' +
+    '</label>' +
+    '<div class="btn-row">' +
+      '<button class="btn btn-ghost btn-sm" id="delCancel">取消</button>' +
+      '<button class="btn btn-danger btn-sm" id="delConfirm">确认删除</button>' +
+    '</div></div>';
+  document.body.appendChild(overlay);
+  document.getElementById('delCancel').onclick = function() { overlay.remove(); };
+  document.getElementById('delConfirm').onclick = function() {
+    if (document.getElementById('delDontAsk').checked) {
+      localStorage.setItem('delete_dont_ask_until', String(Date.now() + 3600000));
+    }
+    saveSessions(getSessions().filter(function(s) { return s.id !== id; }));
+    overlay.remove();
+    renderSidebar(); toast('已删除');
+  };
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
 }
 function clearSessions() {
   if (!confirm('确认清空全部存档？')) return;
@@ -1059,6 +1092,9 @@ function localGenerateQuestions(text) {
 }
 
 // ========== AI: ANALYZE ANSWER ==========
+// AI analysis cache: key = qid, value = {notesHash, html}
+var _aiCache = {};
+
 async function analyzeAnswer(qid) {
   var q = S.questions.find(function(q){return q.id===qid;});
   if (!q) return;
@@ -1067,6 +1103,17 @@ async function analyzeAnswer(qid) {
   // Toggle: if already showing, hide and return
   if (div.classList.contains('show') && !div.classList.contains('loading')) {
     div.className = 'ai-result';
+    btn.className = 'btn btn-primary btn-sm';
+    btn.textContent = '🤖 AI 分析';
+    return;
+  }
+  // Check cache: if notes unchanged, show cached result
+  var notesHash = (q.notes || '') + '|' + (q.question || '');
+  var cached = _aiCache[qid];
+  if (cached && cached.notesHash === notesHash) {
+    div.innerHTML = cached.html;
+    div.className = 'ai-result show';
+    btn.className = 'btn btn-ghost btn-sm';
     btn.textContent = '🤖 AI 分析';
     return;
   }
@@ -1124,11 +1171,15 @@ async function analyzeAnswer(qid) {
       result.dims.map(function(d){ return '<div style="margin-bottom:8px;line-height:1.7">'+d+'</div>'; }).join('') +
       (result.comment ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2)">'+result.comment+'</div>' : '') +
       (result.tip ? '<div style="margin-top:4px">💡 '+result.tip+'</div>' : '');
+    // Cache the result
+    _aiCache[qid] = { notesHash: (q.notes||'') + '|' + (q.question||''), html: div.innerHTML };
   } catch(err) {
     div.className = 'ai-result show';
     div.innerHTML = '<span style="color:#c44">❌ ' + err.message + '</span>';
   } finally {
-    btn.disabled = false; btn.textContent = '🤖 AI 分析';
+    btn.disabled = false;
+    btn.className = div.classList.contains('show') && !div.classList.contains('loading') ? 'btn btn-ghost btn-sm' : 'btn btn-primary btn-sm';
+    btn.textContent = '🤖 AI 分析';
   }
 }
 
@@ -1144,6 +1195,7 @@ function suggestImprovement(qid) {
   // Toggle: if already showing, hide and return
   if (div.classList.contains('show') && !div.classList.contains('loading')) {
     div.className = 'ai-result';
+    btn.className = 'btn btn-primary btn-sm';
     btn.textContent = '💡 提升建议';
     return;
   }
@@ -1221,7 +1273,9 @@ function suggestImprovement(qid) {
       '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text)">💡 你的回答提升建议</div>' +
       suggestions.map(function(s){ return '<div style="margin-bottom:10px;line-height:1.7;font-size:12px;color:var(--text)">'+s+'</div>'; }).join('') +
       '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);font-size:12px;color:var(--accent)">' + summary + '</div>';
-    btn.disabled = false; btn.textContent = '💡 提升建议';
+    btn.disabled = false;
+    btn.className = div.classList.contains('show') ? 'btn btn-ghost btn-sm' : 'btn btn-primary btn-sm';
+    btn.textContent = '💡 提升建议';
   }, 300);
 }
 
@@ -1285,7 +1339,7 @@ function renderLayout() {
             [1,2,3,4,5].map(function(v){ return '<button class="rating-dot" data-qid="'+q.id+'" data-val="'+v+'" onclick="setRating(\''+q.id+'\','+v+')">'+v+'</button>'; }).join('') +
           '</div>' +
           '<button class="btn btn-primary btn-sm" id="aiBtn-'+q.id+'" onclick="analyzeAnswer(\''+q.id+'\')">🤖 AI 分析</button>' +
-          '<button class="btn btn-ghost btn-sm" id="improveBtn-'+q.id+'" onclick="suggestImprovement(\''+q.id+'\')" style="margin-left:4px">💡 提升建议</button>' +
+          '<button class="btn btn-primary btn-sm" id="improveBtn-'+q.id+'" onclick="suggestImprovement(\''+q.id+'\')" style="margin-left:4px">💡 提升建议</button>' +
 
         '</div>' +
         '<div class="ai-result" id="aiRes-'+q.id+'"></div>' +
