@@ -611,6 +611,34 @@ var FileHandler = {
     } catch (err) {
       console.error(err); resetAll(); toast('文件解析失败：' + err.message);
     }
+  },
+
+  parsePPTX: async function(file) {
+    try {
+      if (typeof JSZip === 'undefined') throw new Error('JSZip 未加载');
+      var zip = await JSZip.loadAsync(file);
+      var slideFiles = [];
+      zip.forEach(function(path, entry) {
+        if (/ppt\/slides\/slide\d+\.xml/.test(path) && !entry.dir) {
+          slideFiles.push(path);
+        }
+      });
+      slideFiles.sort();
+      if (slideFiles.length === 0) throw new Error('未找到幻灯片内容');
+      var allText = [];
+      for (var si = 0; si < slideFiles.length; si++) {
+        var xmlContent = await zip.file(slideFiles[si]).async('string');
+        var texts = xmlContent.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+        var slideText = texts.map(function(t) {
+          return t.replace(/<a:t[^>]*>/, '').replace(/<\/a:t>/, '').trim();
+        }).filter(function(t) { return t.length > 0; }).join(' ');
+        if (slideText.length > 0) allText.push(slideText);
+      }
+      return allText.join('\n');
+    } catch(e) {
+      console.error('PPTX parse error:', e);
+      return '';
+    }
   }
 
 };
