@@ -233,6 +233,22 @@ input[type="file"]{display:none}
 .settings-dialog .btn-row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 .settings-dialog .hint{font-size:10px;color:var(--text3);margin-bottom:12px}
 
+
+/* ===== ANNOUNCEMENT MODAL ===== */
+.announce-overlay{
+  position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.5);
+  display:flex;align-items:center;justify-content:center
+}
+.announce-dialog{
+  background:var(--history);border:1px solid var(--border2);border-radius:var(--radius);
+  padding:28px 24px;width:400px;max-width:90vw;box-shadow:0 16px 40px rgba(0,0,0,0.25);
+  text-align:center;--text:#6F7C80;--text2:#8a9598;--text3:#a5aeb0
+}
+.announce-dialog h3{font-size:17px;font-weight:700;margin-bottom:12px;color:var(--text)}
+.announce-dialog p{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:20px}
+.announce-dialog .btn-row{display:flex;gap:8px;justify-content:center}
+
+
 /* ===== EMPTY STATE ===== */
 .empty-state{text-align:center;padding:60px 24px;color:var(--text3)}
 
@@ -366,6 +382,18 @@ input[type="file"]{display:none}
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- ===== ANNOUNCEMENT MODAL ===== -->
+<div class="announce-overlay" id="announceOverlay">
+  <div class="announce-dialog">
+    <h3>📢 使用提示</h3>
+    <p>由于本地无法识别，请在设置中输入自己的API后方可使用。<br>点击右上角 ⚙️设置 配置 API Key。</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="dismissAnnounce()">我知道了</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ===== SETTINGS MODAL ===== -->
 <div class="settings-overlay" id="settingsOverlay" onclick="toggleConfig()">
   <div class="settings-dialog" onclick="event.stopPropagation()">
@@ -375,14 +403,14 @@ input[type="file"]{display:none}
       <option value="deepseek">DeepSeek</option>
       <option value="doubao">豆包</option>
     </select>
-    <label>API Key（可选）</label>
+    <label>API Key（❗️必选）</label>
     <input type="password" id="cfgKey" placeholder="sk-..." onchange="saveCfg()">
     <label>界面布局</label>
     <select id="cfgLayout" onchange="saveCfg();renderLayout()">
       <option value="single">单栏（左自填 · 右生成）</option>
       <option value="double">双栏（上自填 · 下生成）</option>
     </select>
-    <p class="hint">Key 仅存本地。留空使用内置本地分析引擎</p>
+    <p class="hint">Key 仅存本地。不填将无法使用AI生成和分析功能</p>
     <div class="btn-row">
       <button class="btn btn-ghost btn-sm" onclick="toggleConfig()">关闭</button>
     </div>
@@ -392,6 +420,13 @@ input[type="file"]{display:none}
 <script>
 try { pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch(e) { console.warn('pdf.js not loaded'); }
 if (typeof mammoth === 'undefined') { console.warn('mammoth.js not loaded'); }
+
+
+// ========== ANNOUNCEMENT ==========
+function dismissAnnounce() {
+  document.getElementById('announceOverlay').style.display = 'none';
+  localStorage.setItem('announce_seen', '1');
+}
 
 // ========== STATE ==========
 var S = {
@@ -1245,6 +1280,7 @@ var SemGrader = {
   modelReady: false,
   modelLoading: false,
   extractor: null,
+  lastError: null,
 
   // Load the feature extraction pipeline
   load: async function() {
@@ -1260,14 +1296,20 @@ var SemGrader = {
     }
     SemGrader.modelLoading = true;
     try {
-      if (typeof transformers === 'undefined') throw new Error('Transformers.js 未加载');
-      SemGrader.extractor = await transformers.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      if (typeof transformers === 'undefined') throw new Error('Transformers.js CDN 未加载，请检查网络连接');
+      // Try loading with a timeout
+      var loadPromise = transformers.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      var timeoutPromise = new Promise(function(_, reject) {
+        setTimeout(function() { reject(new Error('模型下载超时（>30秒），可能网络不通或模型源不可达')); }, 30000);
+      });
+      SemGrader.extractor = await Promise.race([loadPromise, timeoutPromise]);
       SemGrader.modelReady = true;
       console.log('SemGrader model loaded');
       return true;
     } catch(e) {
       console.warn('SemGrader load failed:', e.message);
       SemGrader.modelLoading = false;
+      SemGrader.lastError = e.message;
       return false;
     }
   },
@@ -1298,7 +1340,7 @@ var SemGrader = {
   grade: async function(question, answer) {
     if (!question || !answer) return null;
     var ready = await SemGrader.load();
-    if (!ready) return { error: '模型加载失败，请检查网络后刷新重试' };
+    if (!ready) return { error: '模型加载失败：' + (SemGrader.lastError || '请检查网络后刷新重试。如在中国大陆，Hugging Face 模型可能需要代理访问。') };
 
     var embQ = await SemGrader.embed(question);
     var embA = await SemGrader.embed(answer);
@@ -1398,6 +1440,11 @@ function showGradeResult(res, hint, result, hintText) {
 document.getElementById('fileInput').addEventListener('change', function(){FileHandler.handle(this.files[0]);});
 document.addEventListener('DOMContentLoaded', function(){
   loadCfg(); updateDot();
+  if (!localStorage.getItem('announce_seen')) {
+    document.getElementById('announceOverlay').style.display = 'flex';
+  } else {
+    document.getElementById('announceOverlay').style.display = 'none';
+  }
   document.getElementById('cfgLayout').value = S.layoutMode;
   document.getElementById('cfgProvider').value = S.provider;
   document.getElementById('cfgKey').value = S.apiKey;
