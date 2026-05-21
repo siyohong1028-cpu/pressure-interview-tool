@@ -1126,6 +1126,95 @@ async function analyzeAnswer(qid) {
   }
 }
 
+// ========== IMPROVEMENT SUGGESTIONS ==========
+function suggestImprovement(qid) {
+  var q = S.questions.find(function(q){return q.id === qid;});
+  if (!q) return;
+  var notes = q.notes || '';
+  if (!notes.trim()) { toast('请先记录受访者回答笔记'); return; }
+
+  var btn = document.getElementById('improveBtn-'+qid);
+  var div = document.getElementById('improveRes-'+qid);
+  btn.disabled = true; btn.textContent = '⏳';
+  div.className = 'ai-result show';
+  div.innerHTML = '<div class="spin" style="font-size:16px">⏳</div> 正在分析并生成提升建议...';
+
+  // Use localAnalyze to get scores first, then generate improvement suggestions
+  var analysis = localAnalyze(q.question, notes, '');
+
+  // Generate improvement suggestions based on detected weaknesses
+  var suggestions = [];
+  var n = notes;
+  var nLen = n.trim().length;
+  var sentences = n.split(/[。！？；\n\.!\?;]+/).filter(function(s){return s.trim().length>3;});
+  var hasExamples = /例如|比如|具体|案例|有一次|当时|记得/.test(n);
+  var hasNumbers = /\d+/.test(n);
+  var hasBecause = /因为|所以|原因|导致|由于|因此/.test(n);
+  var hasBut = /但是|然而|不过|虽然|可是/.test(n);
+  var hasMaybe = /可能|也许|不一定|取决于/.test(n);
+
+  // Logic suggestions
+  if (analysis.logic <= 2) {
+    suggestions.push('<strong>🔍 逻辑性提升</strong><br>受访者回答缺乏因果链条。建议追问：<em>"你当时为什么会这样选择？背后的逻辑是什么？"</em> 引导其用"因为…所以…"结构重新组织回答。');
+  } else if (analysis.logic <= 3) {
+    suggestions.push('<strong>🔍 逻辑性提升</strong><br>有基本因果但缺少多角度。建议追问：<em>"除了这个原因，还有其他因素吗？"</em> 帮其建立更完整的逻辑框架。');
+  } else {
+    suggestions.push('<strong>🔍 逻辑性提升</strong><br>逻辑结构较好。可进一步追问：<em>"如果前提条件变了，你的推理链条哪里会断裂？"</em> 测试其逻辑韧性。');
+  }
+
+  // Depth suggestions
+  if (analysis.depth <= 2) {
+    suggestions.push('<strong>🕳️ 思考深度提升</strong><br>回答停留在表面。建议引导：<em>"这件事背后有没有更深层的原因？抛开表象看本质是什么？"</em> 鼓励其挖掘隐含假设和潜在动机。');
+  } else if (analysis.depth <= 3) {
+    suggestions.push('<strong>🕳️ 思考深度提升</strong><br>有初步思考但未充分展开。建议追问：<em>"你提到了A面，那B面呢？有没有相反的情况？"</em> 训练辩证思维。');
+  } else {
+    suggestions.push('<strong>🕳️ 思考深度提升</strong><br>思考已有深度。可挑战其底层假设：<em>"你这样说基于什么前提？如果这个前提不成立呢？"</em>');
+  }
+
+  // Precision suggestions
+  if (analysis.precision <= 2) {
+    suggestions.push('<strong>🎯 具体程度提升</strong><br>回答太空泛。建议要求：<em>"能不能给我一个具体的数字或案例？不用大概，说真实的。"</em> 逼出其用数据或场景说话。');
+  } else if (analysis.precision <= 3) {
+    suggestions.push('<strong>🎯 具体程度提升</strong><br>有部分细节但不够。建议追问：<em>"能再具体一点吗？比如时间、地点、具体数值？"</em> 让回答更"落地"。');
+  } else {
+    suggestions.push('<strong>🎯 具体程度提升</strong><br>回答已较具体。可追问：<em>"除了这个例子，还有没有不同类型的场景也能说明？"</em> 扩充案例多样性。');
+  }
+
+  // Composure suggestions
+  if (analysis.composure <= 2) {
+    suggestions.push('<strong>🧘 应变能力提升</strong><br>受访者在压力下显得准备不足。建议：<em>给其30秒整理思路后重新回答同一问题，观察前后变化。</em>');
+  } else if (analysis.composure <= 3) {
+    suggestions.push('<strong>🧘 应变能力提升</strong><br>能应对但不够从容。建议：<em>突然打断其回答，问一个看似无关的追问，看其能否衔接回来。</em>');
+  } else {
+    suggestions.push('<strong>🧘 应变能力提升</strong><br>应变表现不错。可增加压力：<em>连续追问3个"为什么"，看其能否在压力下保持逻辑清晰。</em>');
+  }
+
+  // Overall tip based on combined analysis
+  var overallTip = '';
+  var weakestScore = Math.min(analysis.logic, analysis.depth, analysis.precision, analysis.composure);
+  var dimNames = {logic:'逻辑性', depth:'思考深度', precision:'具体程度', composure:'应变能力'};
+  var weakestDim = '';
+  for (var d in dimNames) {
+    if (analysis[d] === weakestScore) { weakestDim = dimNames[d]; break; }
+  }
+
+  if (nLen < 20) {
+    overallTip = '⚠️ 注意：笔记内容过少（' + nLen + '字），提升建议基于有限信息推断。建议先引导受访者多说，再进行分析。';
+  } else if (weakestScore <= 2) {
+    overallTip = '📌 首要改进方向：<strong>' + weakestDim + '</strong>。该维度得分偏低，建议下次面试时优先针对此项设计追问。';
+  } else {
+    overallTip = '📌 整体表现尚可，可在<strong>' + weakestDim + '</strong>维度继续深挖，让受访者展现更高水平。';
+  }
+
+  setTimeout(function() {
+    div.innerHTML =
+      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text)">💡 基于四个维度的提升建议</div>' +
+      suggestions.map(function(s){ return '<div style="margin-bottom:10px;line-height:1.7;font-size:12px;color:var(--text)">'+s+'</div>'; }).join('') +
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);font-size:12px;color:var(--accent)">' + overallTip + '</div>';
+    btn.disabled = false; btn.textContent = '💡 提升建议';
+  }, 300);
+}
+
 // ========== CARD RENDERING ==========
 function renderLayout() {
   var area = document.getElementById('cardsArea');
@@ -1147,11 +1236,7 @@ function renderLayout() {
     sfHtml += '</div>';
     sfHtml += '<input class="sf-q" id="sfq-'+sf.id+'" placeholder="输入你想问的问题..." value="'+escHtml(sf.question||'')+'" onchange="saveSelfFill('+sf.id+')">';
     sfHtml += '<textarea class="notes-textarea" id="sfn-'+sf.id+'" placeholder="记录受访者的回答笔记..." onchange="saveSelfFill('+sf.id+')" style="min-height:80px">'+escHtml(sf.notes||'')+'</textarea>';
-    sfHtml += '<div class="card-foot">';
-    sfHtml += '<button class="btn btn-primary btn-sm" id="gradeBtn-'+sf.id+'" onclick="gradeSelfFill('+sf.id+')">🤖 语义批改</button>';
-    sfHtml += '<span style="font-size:12px;color:var(--text2);margin-left:8px" id="gradeHint-'+sf.id+'">对比标准答案与受访者回答</span>';
-    sfHtml += '</div>';
-    sfHtml += '<div class="ai-result" id="gradeRes-'+sf.id+'"></div>';
+
     sfHtml += '</div>';
   }
   sfHtml += '<div class="sf-add-wrap"><button class="btn btn-ghost btn-sm" onclick="addSelfFill()">＋ 添加自填问题</button></div>';
@@ -1190,10 +1275,12 @@ function renderLayout() {
             [1,2,3,4,5].map(function(v){ return '<button class="rating-dot" data-qid="'+q.id+'" data-val="'+v+'" onclick="setRating(\''+q.id+'\','+v+')">'+v+'</button>'; }).join('') +
           '</div>' +
           '<button class="btn btn-primary btn-sm" id="aiBtn-'+q.id+'" onclick="analyzeAnswer(\''+q.id+'\')">🤖 AI 分析</button>' +
-          '<button class="btn btn-ghost btn-sm" id="gradeGBtn-'+q.id+'" onclick="gradeGenQuestion(\''+q.id+'\')" style="margin-left:4px">📊 语义批改</button>' +
+          '<button class="btn btn-ghost btn-sm" id="improveBtn-'+q.id+'" onclick="suggestImprovement(\''+q.id+'\')" style="margin-left:4px">💡 提升建议</button>' +
+
         '</div>' +
         '<div class="ai-result" id="aiRes-'+q.id+'"></div>' +
-        '<div class="ai-result" id="gradeGRes-'+q.id+'"></div>' +
+        '<div class="ai-result" id="improveRes-'+q.id+'"></div>' +
+
       '</div>';
     });
   });
