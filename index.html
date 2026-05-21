@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 /* ===== RESET & DESIGN TOKENS ===== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -315,13 +316,13 @@ input[type="file"]{display:none}
     <h3>上传文件生成压面题库</h3>
     <p>拖拽或点击上传。AI 读懂文档后自动生成针对性问题</p>
     <div class="format-badges">
-      <span class="format-badge">PDF</span><span class="format-badge">DOCX</span><span class="format-badge">TXT</span>
+      <span class="format-badge">PDF</span><span class="format-badge">DOCX</span><span class="format-badge">PPTX</span><span class="format-badge">TXT</span>
     </div>
     <div style="margin-top:20px">
       <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();pasteText()">📋 直接粘贴文字</button>
     </div>
   </div>
-  <input type="file" id="fileInput" accept=".pdf,.docx,.txt">
+  <input type="file" id="fileInput" accept=".pdf,.docx,.pptx,.txt">
 
   <!-- Preview -->
   <div class="preview-box" id="previewBox">
@@ -343,7 +344,7 @@ input[type="file"]{display:none}
   <!-- Empty -->
   <div class="empty-state" id="emptyState">
     <div style="font-size:48px;margin-bottom:12px">🧊</div>
-    <p>上传一份文档 —— AI 生成压面题库</p>
+    <p>由于本地无法识别，请在设置中输入自己的API后方可使用</p>
   </div>
 </main>
 
@@ -576,6 +577,8 @@ var FileHandler = {
       } else if (ext === 'doc') {
         resetAll(); toast('暂不支持 .doc 格式，请转换为 .docx 或 .txt 后重试');
         return;
+      } else if (ext === 'pptx') {
+        text = await FileHandler.parsePPTX(file);
       } else if (ext === 'pdf') {
         var buf = await file.arrayBuffer();
         var pdf = await pdfjsLib.getDocument({ data: buf }).promise;
