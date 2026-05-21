@@ -1064,6 +1064,12 @@ async function analyzeAnswer(qid) {
   if (!q) return;
   var btn = document.getElementById('aiBtn-'+qid);
   var div = document.getElementById('aiRes-'+qid);
+  // Toggle: if already showing, hide and return
+  if (div.classList.contains('show') && !div.classList.contains('loading')) {
+    div.className = 'ai-result';
+    btn.textContent = '🤖 AI 分析';
+    return;
+  }
   btn.disabled = true; btn.textContent = '⏳';
   div.className = 'ai-result show loading';
   div.textContent = '分析中...';
@@ -1135,82 +1141,86 @@ function suggestImprovement(qid) {
 
   var btn = document.getElementById('improveBtn-'+qid);
   var div = document.getElementById('improveRes-'+qid);
+  // Toggle: if already showing, hide and return
+  if (div.classList.contains('show') && !div.classList.contains('loading')) {
+    div.className = 'ai-result';
+    btn.textContent = '💡 提升建议';
+    return;
+  }
   btn.disabled = true; btn.textContent = '⏳';
   div.className = 'ai-result show';
-  div.innerHTML = '<div class="spin" style="font-size:16px">⏳</div> 正在分析并生成提升建议...';
+  div.innerHTML = '<div class="spin" style="font-size:16px">⏳</div> 正在分析回答并生成个性化提升建议...';
 
-  // Use localAnalyze to get scores first, then generate improvement suggestions
   var analysis = localAnalyze(q.question, notes, '');
-
-  // Generate improvement suggestions based on detected weaknesses
-  var suggestions = [];
   var n = notes;
   var nLen = n.trim().length;
-  var sentences = n.split(/[。！？；\n\.!\?;]+/).filter(function(s){return s.trim().length>3;});
   var hasExamples = /例如|比如|具体|案例|有一次|当时|记得/.test(n);
   var hasNumbers = /\d+/.test(n);
   var hasBecause = /因为|所以|原因|导致|由于|因此/.test(n);
   var hasBut = /但是|然而|不过|虽然|可是/.test(n);
   var hasMaybe = /可能|也许|不一定|取决于/.test(n);
 
-  // Logic suggestions
+  // Build suggestions addressing the INTERVIEWEE directly
+  var suggestions = [];
+
+  // Logic
   if (analysis.logic <= 2) {
-    suggestions.push('<strong>🔍 逻辑性提升</strong><br>受访者回答缺乏因果链条。建议追问：<em>"你当时为什么会这样选择？背后的逻辑是什么？"</em> 引导其用"因为…所以…"结构重新组织回答。');
+    suggestions.push('<strong>🔍 逻辑性 ' + analysis.logic + '/5</strong><br>你的回答缺少清晰的因果链条，只是给出了结论但没有解释"为什么"。<br>👉 <em>试着用"因为…所以…"重新组织你的思路。比如先说原因，再讲结果，最后说启发。</em>');
   } else if (analysis.logic <= 3) {
-    suggestions.push('<strong>🔍 逻辑性提升</strong><br>有基本因果但缺少多角度。建议追问：<em>"除了这个原因，还有其他因素吗？"</em> 帮其建立更完整的逻辑框架。');
+    suggestions.push('<strong>🔍 逻辑性 ' + analysis.logic + '/5</strong><br>有基本的因果意识，但角度单一，只看到了一个原因。<br>👉 <em>尝试补充：除了这个原因，还有哪些因素在起作用？多角度会让你的逻辑更严密。</em>');
   } else {
-    suggestions.push('<strong>🔍 逻辑性提升</strong><br>逻辑结构较好。可进一步追问：<em>"如果前提条件变了，你的推理链条哪里会断裂？"</em> 测试其逻辑韧性。');
+    suggestions.push('<strong>🔍 逻辑性 ' + analysis.logic + '/5</strong><br>逻辑结构较好，能清晰表达因果关系。<br>👉 <em>进一步提升：思考"如果前提变了，结论还成立吗？"让推理更有韧性。</em>');
   }
 
-  // Depth suggestions
+  // Depth
   if (analysis.depth <= 2) {
-    suggestions.push('<strong>🕳️ 思考深度提升</strong><br>回答停留在表面。建议引导：<em>"这件事背后有没有更深层的原因？抛开表象看本质是什么？"</em> 鼓励其挖掘隐含假设和潜在动机。');
+    suggestions.push('<strong>🕳️ 思考深度 ' + analysis.depth + '/5</strong><br>你的回答停留在事情表面，没有深入挖掘背后的原因和隐含假设。<br>👉 <em>试着问自己：这件事本质是什么？有没有更深层的原因？抛开表象看核心。</em>');
   } else if (analysis.depth <= 3) {
-    suggestions.push('<strong>🕳️ 思考深度提升</strong><br>有初步思考但未充分展开。建议追问：<em>"你提到了A面，那B面呢？有没有相反的情况？"</em> 训练辩证思维。');
+    suggestions.push('<strong>🕳️ 思考深度 ' + analysis.depth + '/5</strong><br>有初步的深入思考，但还没有充分展开，只触及了问题的一面。<br>👉 <em>尝试从反面思考：如果反过来看呢？有没有矛盾的情况？辩证思维会让深度翻倍。</em>');
   } else {
-    suggestions.push('<strong>🕳️ 思考深度提升</strong><br>思考已有深度。可挑战其底层假设：<em>"你这样说基于什么前提？如果这个前提不成立呢？"</em>');
+    suggestions.push('<strong>🕳️ 思考深度 ' + analysis.depth + '/5</strong><br>思考有一定深度，能看到问题的复杂性。<br>👉 <em>继续挑战自己：你这种看法基于什么前提？如果这个前提不成立，结论怎么变？</em>');
   }
 
-  // Precision suggestions
+  // Precision
   if (analysis.precision <= 2) {
-    suggestions.push('<strong>🎯 具体程度提升</strong><br>回答太空泛。建议要求：<em>"能不能给我一个具体的数字或案例？不用大概，说真实的。"</em> 逼出其用数据或场景说话。');
+    suggestions.push('<strong>🎯 具体程度 ' + analysis.precision + '/5</strong><br>你的回答偏概括和抽象，缺少让人记住的具体细节。<br>👉 <em>改进方法：每说一个观点，立刻补一个真实案例或具体数字。不用"大概"，说真实的。</em>');
   } else if (analysis.precision <= 3) {
-    suggestions.push('<strong>🎯 具体程度提升</strong><br>有部分细节但不够。建议追问：<em>"能再具体一点吗？比如时间、地点、具体数值？"</em> 让回答更"落地"。');
+    suggestions.push('<strong>🎯 具体程度 ' + analysis.precision + '/5</strong><br>有一些具体内容，但还不够"落地"，部分描述仍然模糊。<br>👉 <em>补充更多细节：时间、地点、具体数字、参与人、结果数据。细节越具体越有说服力。</em>');
   } else {
-    suggestions.push('<strong>🎯 具体程度提升</strong><br>回答已较具体。可追问：<em>"除了这个例子，还有没有不同类型的场景也能说明？"</em> 扩充案例多样性。');
+    suggestions.push('<strong>🎯 具体程度 ' + analysis.precision + '/5</strong><br>回答比较具体，有实际案例或数据支撑。<br>👉 <em>更好：准备不同类型场景下的案例，让你的回答在任何追问下都有"弹药"。</em>');
   }
 
-  // Composure suggestions
+  // Composure
   if (analysis.composure <= 2) {
-    suggestions.push('<strong>🧘 应变能力提升</strong><br>受访者在压力下显得准备不足。建议：<em>给其30秒整理思路后重新回答同一问题，观察前后变化。</em>');
+    suggestions.push('<strong>🧘 应变能力 ' + analysis.composure + '/5</strong><br>在压力下你的回答显得有些准备不足，结构松散。<br>👉 <em>练习：给自己30秒整理思路，用"总-分-总"结构（先结论→再论据→最后总结）重新说一遍。</em>');
   } else if (analysis.composure <= 3) {
-    suggestions.push('<strong>🧘 应变能力提升</strong><br>能应对但不够从容。建议：<em>突然打断其回答，问一个看似无关的追问，看其能否衔接回来。</em>');
+    suggestions.push('<strong>🧘 应变能力 ' + analysis.composure + '/5</strong><br>基本能应对压力，但回答的节奏和层次还可以更清晰。<br>👉 <em>练习：让朋友在你说话时突然打断或质疑，训练被打断后仍能回到主线的能力。</em>');
   } else {
-    suggestions.push('<strong>🧘 应变能力提升</strong><br>应变表现不错。可增加压力：<em>连续追问3个"为什么"，看其能否在压力下保持逻辑清晰。</em>');
+    suggestions.push('<strong>🧘 应变能力 ' + analysis.composure + '/5</strong><br>应变表现不错，在压力下仍保持条理。<br>👉 <em>继续挑战：尝试面对连续追问（3个"为什么"），保持逻辑清晰不慌乱。</em>');
   }
 
-  // Overall tip based on combined analysis
-  var overallTip = '';
+  // Overall personalized summary
   var weakestScore = Math.min(analysis.logic, analysis.depth, analysis.precision, analysis.composure);
   var dimNames = {logic:'逻辑性', depth:'思考深度', precision:'具体程度', composure:'应变能力'};
-  var weakestDim = '';
+  var strongestScore = Math.max(analysis.logic, analysis.depth, analysis.precision, analysis.composure);
+  var weakestDim = '', strongestDim = '';
   for (var d in dimNames) {
-    if (analysis[d] === weakestScore) { weakestDim = dimNames[d]; break; }
+    if (analysis[d] === weakestScore) weakestDim = dimNames[d];
+    if (analysis[d] === strongestScore) strongestDim = dimNames[d];
   }
 
+  var summary = '';
   if (nLen < 20) {
-    overallTip = '⚠️ 注意：笔记内容过少（' + nLen + '字），提升建议基于有限信息推断。建议先引导受访者多说，再进行分析。';
-  } else if (weakestScore <= 2) {
-    overallTip = '📌 首要改进方向：<strong>' + weakestDim + '</strong>。该维度得分偏低，建议下次面试时优先针对此项设计追问。';
+    summary = '⚠️ 你的回答内容过少（仅' + nLen + '字），以上建议基于有限信息推断。建议充分展开回答后再看提升方向。';
   } else {
-    overallTip = '📌 整体表现尚可，可在<strong>' + weakestDim + '</strong>维度继续深挖，让受访者展现更高水平。';
+    summary = '📌 <strong>你的优势在' + strongestDim + '</strong>（' + strongestScore + '/5），<strong>最需提升的是' + weakestDim + '</strong>（' + weakestScore + '/5）。建议优先针对' + weakestDim + '进行刻意练习。';
   }
 
   setTimeout(function() {
     div.innerHTML =
-      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text)">💡 基于四个维度的提升建议</div>' +
+      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text)">💡 你的回答提升建议</div>' +
       suggestions.map(function(s){ return '<div style="margin-bottom:10px;line-height:1.7;font-size:12px;color:var(--text)">'+s+'</div>'; }).join('') +
-      '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);font-size:12px;color:var(--accent)">' + overallTip + '</div>';
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);font-size:12px;color:var(--accent)">' + summary + '</div>';
     btn.disabled = false; btn.textContent = '💡 提升建议';
   }, 300);
 }
